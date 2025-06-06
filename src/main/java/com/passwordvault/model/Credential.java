@@ -1,36 +1,51 @@
 package com.passwordvault.model;
 
-import com.passwordvault.utils.ConsoleUtils;
-
 import java.time.LocalDateTime;
-import java.time.format.DateTimeFormatter;
+import java.util.UUID;
 
 /**
- * Classe que representa uma credencial armazenada no gerenciador de senhas.
- * Contém informações sobre o serviço, email e senha associados.
+ * Representa uma credencial armazenada no sistema.
  */
 public class Credential {
-    private String id;
+    private int credentialId; // Gerado pelo BD
+    private UUID id; // UUID interno
     private String service;
     private String email;
-    private String encryptedPassword;
+    private String password; // Senha pura em memória, será criptografada para armazenamento
     private LocalDateTime createdAt;
     private LocalDateTime updatedAt;
     private boolean isCompromised;
-    private static final DateTimeFormatter formatter = DateTimeFormatter.ofPattern("dd/MM/yyyy HH:mm:ss");
 
-    public Credential(String service, String email, String encryptedPassword) {
-        this.id = java.util.UUID.randomUUID().toString();
+    // Construtor para carregar do BD
+    public Credential(int credentialId, UUID id, String service, String email, String password, LocalDateTime createdAt, LocalDateTime updatedAt, boolean isCompromised) {
+        this.credentialId = credentialId;
+        this.id = id;
         this.service = service;
         this.email = email;
-        this.encryptedPassword = encryptedPassword;
+        this.password = password; // Ao carregar, esta é a senha descriptografada
+        this.createdAt = createdAt;
+        this.updatedAt = updatedAt;
+        this.isCompromised = isCompromised;
+    }
+
+    // Construtor para criar nova credencial
+    public Credential(String service, String email, String password) {
+        this.id = UUID.randomUUID(); // Gerar um novo UUID
+        this.service = service;
+        this.email = email;
+        this.password = password; // Ao criar, esta é a senha pura digitada
         this.createdAt = LocalDateTime.now();
         this.updatedAt = LocalDateTime.now();
         this.isCompromised = false;
     }
 
-    // Getters e Setters
-    public String getId() {
+    // Getters
+
+    public int getCredentialId() {
+        return credentialId;
+    }
+
+    public UUID getId() {
         return id;
     }
 
@@ -38,27 +53,12 @@ public class Credential {
         return service;
     }
 
-    public void setService(String service) {
-        this.service = service;
-        this.updatedAt = LocalDateTime.now();
-    }
-
     public String getEmail() {
         return email;
     }
 
-    public void setEmail(String email) {
-        this.email = email;
-        this.updatedAt = LocalDateTime.now();
-    }
-
-    public String getEncryptedPassword() {
-        return encryptedPassword;
-    }
-
-    public void setEncryptedPassword(String encryptedPassword) {
-        this.encryptedPassword = encryptedPassword;
-        this.updatedAt = LocalDateTime.now();
+    public String getPassword() {
+        return password;
     }
 
     public LocalDateTime getCreatedAt() {
@@ -73,25 +73,39 @@ public class Credential {
         return isCompromised;
     }
 
+    // Setters (apenas para campos que podem mudar ou ser definidos após a criação)
+
+    public void setCredentialId(int credentialId) {
+        this.credentialId = credentialId;
+    }
+
+    // setPassword pode ser útil se houver lógica para atualizar a senha em memória,
+    // mas a atualização no BD deve passar pela criptografia no repositório.
+    public void setPassword(String password) {
+        this.password = password;
+    }
+
+    public void setUpdatedAt(LocalDateTime updatedAt) {
+        this.updatedAt = updatedAt;
+    }
+
     public void setCompromised(boolean compromised) {
         isCompromised = compromised;
-        this.updatedAt = LocalDateTime.now();
     }
+
+    // Omitindo setters para campos que não devem mudar após a criação (id, service, email, createdAt)
 
     @Override
     public String toString() {
-        return String.format("%sServiço: %s%s\n%sEmail: %s%s\n%sÚltima atualização: %s%s\n%sStatus: %s%s",
-                ConsoleUtils.BOLD + ConsoleUtils.CYAN,
-                ConsoleUtils.WHITE,
-                ConsoleUtils.RESET,
-                ConsoleUtils.BOLD + ConsoleUtils.CYAN,
-                ConsoleUtils.WHITE,
-                ConsoleUtils.RESET,
-                ConsoleUtils.BOLD + ConsoleUtils.CYAN,
-                ConsoleUtils.WHITE,
-                ConsoleUtils.RESET,
-                ConsoleUtils.BOLD + ConsoleUtils.CYAN,
-                isCompromised ? ConsoleUtils.RED + "COMPROMETIDO" : ConsoleUtils.GREEN + "Seguro",
-                ConsoleUtils.RESET);
+        return "Credential{" +
+               "credentialId=" + credentialId +
+               ", id=" + id +
+               ", service='" + service + '\'' +
+               ", email='" + email + '\'' +
+               // Não incluir senha no toString por segurança
+               ", createdAt=" + createdAt +
+               ", updatedAt=" + updatedAt +
+               ", isCompromised=" + isCompromised +
+               '}';
     }
 } 

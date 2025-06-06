@@ -11,9 +11,8 @@ public class Main {
             PasswordVaultController controller = new PasswordVaultController();
             controller.start();
         } catch (Exception e) {
-            System.err.println("Erro fatal: " + e.getMessage());
+            System.err.println("Erro fatal ao iniciar a aplicação: " + e.getMessage());
             e.printStackTrace();
-            System.exit(1);
         }
     }
 } 
