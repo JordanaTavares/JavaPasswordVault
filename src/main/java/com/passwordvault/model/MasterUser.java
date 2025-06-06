@@ -19,7 +19,7 @@ public class MasterUser {
         return twoFactorSecret;
     }
 
-    // Setters (se necessário, mas para segurança, pode ser melhor criar um novo objeto)
+    // Setters
     public void setHashedPassword(String hashedPassword) {
         this.hashedPassword = hashedPassword;
     }

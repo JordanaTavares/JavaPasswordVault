@@ -19,4 +19,7 @@ Thumbs.db
 
 # Arquivos de configuração local
 credentials.json
-masteruser.json 
+masteruser.json
+
+# Ignorar arquivo de propriedades que contém informações sensíveis do banco de dados
+src/main/resources/application.properties 

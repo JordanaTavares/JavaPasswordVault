@@ -2,60 +2,78 @@ package com.passwordvault.utils;
 
 import java.util.regex.Pattern;
 
+/**
+ * Classe utilitária para validação de dados de entrada.
+ */
 public class ValidationUtils {
-    private static final Pattern EMAIL_PATTERN = Pattern.compile(
-        "^[A-Za-z0-9+_.-]+@(.+)$"
-    );
 
-    private static final Pattern PASSWORD_PATTERN = Pattern.compile(
-        "^(?=.*[0-9])(?=.*[a-z])(?=.*[A-Z])(?=.*[@#$%^&+=])(?=\\S+$).{8,}$"
-    );
+    // Regex para validar senha: mínimo 8 caracteres, pelo menos uma letra maiúscula, uma minúscula, um número e um caractere especial.
+    // Inclui caracteres especiais gerados: !@#$%^&*()-_=+
+    private static final Pattern PASSWORD_PATTERN = Pattern.compile("^(?=.*[a-z])(?=.*[A-Z])(?=.*\\d)(?=.*[!@#$%^&*()\\-_=+]?)[A-Za-z\\d!@#$%^&*()\\-_=+]{8,}$");
 
-    public static boolean isValidEmail(String email) {
-        return email != null && EMAIL_PATTERN.matcher(email).matches();
-    }
+    private static final Pattern EMAIL_PATTERN = Pattern.compile("^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\\.[a-zA-Z]{2,6}$");
 
-    public static boolean isValidPassword(String password) {
-        return password != null && PASSWORD_PATTERN.matcher(password).matches();
-    }
-
-    public static String validateEmail(String email) {
-        if (email == null || email.trim().isEmpty()) {
-            return "O email não pode estar vazio";
-        }
-        if (!isValidEmail(email)) {
-            return "Formato de email inválido";
-        }
-        return null;
-    }
-
+    /**
+     * Valida se uma senha atende aos critérios de segurança.
+     * @param password A senha a ser validada.
+     * @return null se a senha for válida, ou uma mensagem de erro caso contrário.
+     */
     public static String validatePassword(String password) {
-        if (password == null || password.trim().isEmpty()) {
-            return "A senha não pode estar vazia";
+        if (password == null || password.isEmpty()) {
+            return "A senha não pode estar vazia.";
         }
-        if (!isValidPassword(password)) {
-            return "A senha deve conter pelo menos 8 caracteres, incluindo letras maiúsculas, minúsculas, números e caracteres especiais";
+        if (password.length() < 8) {
+            return "A senha deve ter pelo menos 8 caracteres.";
+        }
+        if (!PASSWORD_PATTERN.matcher(password).matches()) {
+            return "A senha deve conter pelo menos uma letra maiúscula, uma minúscula, um número e um caractere especial (@$!%*?&).";
         }
         return null;
     }
 
+    /**
+     * Valida se um email tem um formato válido.
+     * @param email O email a ser validado.
+     * @return null se o email for válido, ou uma mensagem de erro caso contrário.
+     */
+    public static String validateEmail(String email) {
+         if (email == null || email.trim().isEmpty()) {
+             // Email é opcional em Credential, mas se fornecido, deve ser válido.
+             // Permitimos vazio aqui se o campo for opcional na UI/entrada.
+             return null;
+         }
+        if (!EMAIL_PATTERN.matcher(email).matches()) {
+            return "Formato de email inválido.";
+        }
+        return null;
+    }
+
+    /**
+     * Valida se um nome de serviço não está vazio.
+     * @param service O nome do serviço a ser validado.
+     * @return null se o serviço for válido, ou uma mensagem de erro caso contrário.
+     */
     public static String validateService(String service) {
         if (service == null || service.trim().isEmpty()) {
-            return "O nome do serviço não pode estar vazio";
-        }
-        if (service.length() < 3) {
-            return "O nome do serviço deve ter pelo menos 3 caracteres";
+            return "O nome do serviço não pode estar vazio.";
         }
         return null;
     }
 
+    /**
+     * Valida se um código 2FA é um número de 6 dígitos.
+     * @param code O código 2FA a ser validado (como String).
+     * @return null se o código for válido, ou uma mensagem de erro caso contrário.
+     */
     public static String validate2FACode(String code) {
-        if (code == null || code.trim().isEmpty()) {
-            return "O código 2FA não pode estar vazio";
+        if (code == null || code.length() != 6) {
+            return "O código 2FA deve ter 6 dígitos.";
         }
-        if (!code.matches("\\d{6}")) {
-            return "O código 2FA deve conter exatamente 6 dígitos";
+        try {
+            Integer.parseInt(code);
+            return null;
+        } catch (NumberFormatException e) {
+            return "O código 2FA deve conter apenas números.";
         }
-        return null;
     }
 } 
