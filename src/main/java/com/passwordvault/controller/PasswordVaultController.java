@@ -13,11 +13,9 @@ import org.mindrot.jbcrypt.BCrypt;
 
 import javax.crypto.SecretKey;
 import java.security.SecureRandom;
-import java.sql.SQLException;
 import java.util.List;
 import java.util.Scanner;
 import java.util.Base64;
-import java.util.ArrayList;
 
 /**
  * Controlador principal que gerencia todas as operações do sistema.
@@ -54,12 +52,35 @@ public class PasswordVaultController {
         ConsoleUtils.printHeader("Gerenciador de Senhas Seguro");
 
         try {
-            if (!userRepository.userExists("admin")) {
-                ConsoleUtils.printInfo("\nPrimeira execução! Vamos configurar o primeiro usuário (admin).");
-                setupFirstUser();
-            } else {
-                authenticateUser();
+            // Removida a lógica de verificar apenas o usuário 'admin' na inicialização.
+            // Agora, apresentamos um menu inicial para criar ou logar.
+            boolean exitInitialMenu = false;
+            while (!isAuthenticated && !exitInitialMenu) {
+                showInitialMenu();
+                int choice = getIntInput("Escolha uma opção: ");
+
+                switch (choice) {
+                    case 1:
+                        setupFirstUser(); // Este método agora funciona para criar qualquer novo usuário.
+                        // Após criar um usuário, o sistema instrui o usuário a reiniciar/fazer login.
+                        exitInitialMenu = true; // Sair do loop após a configuração para instruir reinício.
+                        break;
+                    case 2:
+                        authenticateUser(); // Tenta autenticar
+                        if (!isAuthenticated) {
+                            ConsoleUtils.printInfo("\nAutenticação falhou. Tente novamente.");
+                        }
+                        break;
+                    case 3:
+                        ConsoleUtils.printInfo("Saindo...");
+                        exitInitialMenu = true; // Sair do loop e encerrar aplicação
+                        break;
+                    default:
+                        ConsoleUtils.printError("Opção inválida!");
+                        break;
+                }
             }
+
 
             if (isAuthenticated && loggedInUser != null) {
                 this.tempMasterPassword = null; // Limpar a senha mestra temporária da memória
@@ -72,21 +93,39 @@ public class PasswordVaultController {
                     processChoice(choice);
                 }
             } else {
-                 if (!isAuthenticated) {
-                     ConsoleUtils.printInfo("\nAutenticação falhou ou foi cancelada. Saindo...");
+                 if (!isAuthenticated && !exitInitialMenu) { // Mensagem apenas se não autenticado E não escolheu sair
+                     ConsoleUtils.printInfo("\nNão foi possível autenticar. Saindo...");
                  }
             }
-        } catch (SQLException e) {
+        } /*
+        catch (SQLException e) {
              ConsoleUtils.printError("Erro de banco de dados durante a inicialização: " + e.getMessage());
              System.exit(1);
-        } catch (Exception e) {
+        } */
+        catch (Exception e) {
              ConsoleUtils.printError("Ocorreu um erro inesperado durante a inicialização: " + e.getMessage());
              System.exit(1);
         }
     }
 
     /**
+     * Exibe o menu inicial para criar usuário ou fazer login.
+     */
+    private void showInitialMenu() {
+        ConsoleUtils.clearScreen();
+        ConsoleUtils.printHeader("Gerenciador de Senhas Seguro");
+        System.out.println();
+        ConsoleUtils.printMenuOption(1, "Criar novo usuário");
+        ConsoleUtils.printMenuOption(2, "Fazer login");
+        ConsoleUtils.printMenuOption(3, "Sair");
+        System.out.println();
+        ConsoleUtils.printInfo("Use os números para selecionar uma opção.");
+        ConsoleUtils.printDivider();
+    }
+
+    /**
      * Configura o primeiro usuário (usuário admin) se nenhum existir.
+     * Este método foi generalizado para criar *qualquer* novo usuário.
      */
     private void setupFirstUser() {
         ConsoleUtils.printHeader("Configuração do Primeiro Usuário");
@@ -118,11 +157,25 @@ public class PasswordVaultController {
                  User newUser = new User(username, BCrypt.hashpw(masterPassword, BCrypt.gensalt()), twoFactorAuth.getSecretKey(), encryptionSalt);
                  userRepository.saveUser(newUser);
                  ConsoleUtils.printSuccess("\nUsuário '" + username + "' configurado com sucesso!");
-                 ConsoleUtils.printInfo("Por favor, execute o programa novamente para fazer login.");
-                 isAuthenticated = false;
-            } catch (SQLException e) {
-                 ConsoleUtils.printError("Erro ao salvar o usuário no banco de dados: " + e.getMessage());
-                 System.exit(1);
+                 
+                 // Após a criação bem-sucedida, autenticar o usuário recém-criado
+                 this.loggedInUser = newUser; // Definir o usuário logado
+                 // Re-derivar a chave de criptografia usando a senha mestra e o sal do novo usuário
+                 SecretKey derivedKey = EncryptionService.deriveKey(masterPassword, Base64.getDecoder().decode(loggedInUser.getEncryptionSalt()));
+                 this.encryptionService = new EncryptionService(derivedKey);
+                 // Inicializar o repositório de credenciais com o novo serviço de criptografia
+                 this.credentialRepository = new DatabaseCredentialRepository(this.encryptionService);
+                 
+                 this.tempMasterPassword = null; // Limpar a senha mestra temporária
+                 this.isAuthenticated = true; // Marcar como autenticado
+
+                 // ConsoleUtils.printInfo("Por favor, execute o programa novamente para fazer login."); // Não é mais necessário reiniciar
+                 // isAuthenticated = false; // Não definir como false após criação
+            } catch (Exception e) { // Captura SQLException e Exception da derivação de chave
+                 ConsoleUtils.printError("Erro ao salvar o usuário ou inicializar serviços: " + e.getMessage());
+                 // Dependendo da gravidade do erro, pode-se querer sair ou tentar novamente.
+                 // Por enquanto, apenas logamos o erro e o usuário permanece não autenticado.
+                 this.isAuthenticated = false;
             }
         } else {
             ConsoleUtils.printError("Código 2FA inválido. Configuração falhou. Tente novamente.");
@@ -184,7 +237,7 @@ public class PasswordVaultController {
                  this.tempMasterPassword = null; // Limpar senha temporária
                 authenticateUser();
             }
-        } catch (SQLException e) {
+        } catch (Exception e) {
             ConsoleUtils.printError("Erro de banco de dados durante a autenticação: " + e.getMessage());
             isAuthenticated = false;
         }
@@ -294,7 +347,7 @@ public class PasswordVaultController {
         try {
              credentialRepository.addCredential(loggedInUser.getUserId(), newCredential);
              ConsoleUtils.printSuccess("Credencial adicionada com sucesso!");
-        } catch (SQLException e) {
+        } catch (Exception e) {
              ConsoleUtils.printError("Erro ao salvar a credencial no banco de dados: " + e.getMessage());
         }
     }
@@ -353,9 +406,33 @@ public class PasswordVaultController {
         String service = getValidatedInput("Nome do serviço: ", ValidationUtils::validateService);
 
         try {
-             // TODO: Implementar busca por serviço no DatabaseCredentialRepository usando user_id
-             ConsoleUtils.printWarning("Busca por serviço ainda não implementada para banco de dados. Exibindo todas as credenciais para o usuário logado como placeholder.");
-             listCredentials(); // Código placeholder
+
+              List<Credential> credentials = credentialRepository.findByUserIdAndService(loggedInUser.getUserId(), service);
+
+              if (credentials.isEmpty()) {
+                  ConsoleUtils.printInfo("Nenhuma credencial encontrada para o serviço: " + service);
+                  return;
+              }
+
+              ConsoleUtils.printInfo("Credenciais encontradas para o serviço: " + service);
+              for (Credential credential : credentials) {
+                  ConsoleUtils.printDivider();
+                   ConsoleUtils.printInfo(String.format("%sServiço: %s%s\n%sEmail: %s%s\n%sSenha: %s%s\n%sCriado em: %s%s\n%sÚltima atualização: %s%s\n%sStatus: %s%s",
+                           ConsoleUtils.BOLD + ConsoleUtils.CYAN,
+                           credential.getService(), ConsoleUtils.RESET,
+                           ConsoleUtils.BOLD + ConsoleUtils.CYAN,
+                           credential.getEmail(), ConsoleUtils.RESET,
+                           ConsoleUtils.BOLD + ConsoleUtils.CYAN,
+                           credential.getPassword(), ConsoleUtils.RESET,
+                            ConsoleUtils.BOLD + ConsoleUtils.CYAN,
+                            credential.getCreatedAt(), ConsoleUtils.RESET,
+                            ConsoleUtils.BOLD + ConsoleUtils.CYAN,
+                           credential.getUpdatedAt(), ConsoleUtils.RESET,
+                            ConsoleUtils.BOLD + ConsoleUtils.CYAN,
+                            credential.isCompromised() ? ConsoleUtils.RED + "COMPROMETIDO" : ConsoleUtils.GREEN + "Seguro", ConsoleUtils.RESET
+                    ));
+              }
+
         } catch (Exception e) {
             ConsoleUtils.printError("Erro ao buscar credenciais: " + e.getMessage());
         }
