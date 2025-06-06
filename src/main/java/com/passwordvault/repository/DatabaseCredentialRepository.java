@@ -104,6 +104,91 @@ public class DatabaseCredentialRepository {
         return credentials;
     }
 
-    // TODO: Implementar findByService, updateCredential, removeCredential usando user_id
-    // TODO: No findByService, buscar por service e user_id, depois descriptografar a senha antes de retornar.
+    /**
+     * Busca credenciais por nome de serviço para um usuário específico.
+     * @param userId O ID do usuário proprietário da credencial.
+     * @param service O nome do serviço a ser buscado.
+     * @return Uma lista de credenciais (com senhas descriptografadas) que correspondem ao serviço.
+     * @throws SQLException se ocorrer um erro de banco de dados.
+     * @throws Exception se ocorrer um erro durante a descriptografia.
+     */
+    public List<Credential> findByUserIdAndService(int userId, String service) throws SQLException, Exception {
+        List<Credential> credentials = new ArrayList<>();
+        // Consulta SQL para buscar credenciais pelo user_id e service
+        String sql = "SELECT credential_id, id, service, email, encrypted_password, created_at, updated_at, is_compromised FROM credentials WHERE user_id = ? AND service = ?";
+        try (Connection conn = getConnection();
+             PreparedStatement pstmt = conn.prepareStatement(sql)) {
+            pstmt.setInt(1, userId);
+            pstmt.setString(2, service);
+            try (ResultSet rs = pstmt.executeQuery()) {
+                while (rs.next()) {
+                    int credentialId = rs.getInt("credential_id");
+                    UUID id = UUID.fromString(rs.getString("id")); // Ler UUID como String
+                    String dbService = rs.getString("service");
+                    String email = rs.getString("email");
+                    String encryptedPassword = rs.getString("encrypted_password");
+                    LocalDateTime createdAt = rs.getTimestamp("created_at").toLocalDateTime();
+                    LocalDateTime updatedAt = rs.getTimestamp("updated_at").toLocalDateTime();
+                    boolean isCompromised = rs.getBoolean("is_compromised");
+
+                    String decryptedPassword = encryptionService.decrypt(encryptedPassword);
+
+                    Credential credential = new Credential(credentialId, id, dbService, email, decryptedPassword, createdAt, updatedAt, isCompromised);
+                    credentials.add(credential);
+                }
+            }
+        }
+        return credentials;
+    }
+
+    /**
+     * Atualiza uma credencial existente no banco de dados para um usuário específico.
+     * @param userId O ID do usuário proprietário da credencial.
+     * @param credential A credencial a ser atualizada (com dados atualizados).
+     * @throws SQLException se ocorrer um erro de banco de dados.
+     * @throws Exception se ocorrer um erro durante a criptografia.
+     */
+    public void updateCredential(int userId, Credential credential) throws SQLException, Exception {
+        String sql = "UPDATE credentials SET service = ?, email = ?, encrypted_password = ?, updated_at = ?, is_compromised = ? WHERE credential_id = ? AND user_id = ?";
+        try (Connection conn = getConnection();
+             PreparedStatement pstmt = conn.prepareStatement(sql)) {
+
+            String encryptedPassword = encryptionService.encrypt(credential.getPassword());
+
+            pstmt.setString(1, credential.getService());
+            pstmt.setString(2, credential.getEmail());
+            pstmt.setString(3, encryptedPassword); // Salvar senha criptografada
+            pstmt.setTimestamp(4, Timestamp.valueOf(LocalDateTime.now())); // Atualizar updated_at
+            pstmt.setBoolean(5, credential.isCompromised());
+            pstmt.setInt(6, credential.getCredentialId());
+            pstmt.setInt(7, userId);
+
+            int affectedRows = pstmt.executeUpdate();
+            if (affectedRows == 0) {
+                 throw new SQLException("Falha ao atualizar credencial, credencial não encontrada ou não pertence ao usuário.");
+            }
+             credential.setUpdatedAt(LocalDateTime.now()); // Atualizar objeto em memória também
+        }
+    }
+
+    /**
+     * Remove uma credencial do banco de dados para um usuário específico.
+     * @param userId O ID do usuário proprietário da credencial.
+     * @param credentialId O ID da credencial a ser removida.
+     * @throws SQLException se ocorrer um erro de banco de dados.
+     */
+    public void removeCredential(int userId, int credentialId) throws SQLException {
+        String sql = "DELETE FROM credentials WHERE credential_id = ? AND user_id = ?";
+        try (Connection conn = getConnection();
+             PreparedStatement pstmt = conn.prepareStatement(sql)) {
+
+            pstmt.setInt(1, credentialId);
+            pstmt.setInt(2, userId);
+
+            int affectedRows = pstmt.executeUpdate();
+            if (affectedRows == 0) {
+                 throw new SQLException("Falha ao remover credencial, credencial não encontrada ou não pertence ao usuário.");
+            }
+        }
+    }
 } 
