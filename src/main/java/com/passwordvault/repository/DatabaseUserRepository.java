@@ -31,7 +31,7 @@ public class DatabaseUserRepository {
      * @throws SQLException se ocorrer um erro de banco de dados.
      */
     public void saveUser(User user) throws SQLException {
-        String sql = "INSERT INTO users (username, hashedPassword, twoFactorSecret, encryptionSalt) VALUES (?, ?, ?, ?)";
+        String sql = "INSERT INTO users (username, hashed_password, two_factor_secret, encryption_salt) VALUES (?, ?, ?, ?)";
         try (Connection conn = getConnection();
              PreparedStatement pstmt = conn.prepareStatement(sql, Statement.RETURN_GENERATED_KEYS)) {
             pstmt.setString(1, user.getUsername());
@@ -91,5 +91,22 @@ public class DatabaseUserRepository {
          }
     }
 
-    // TODO: Adicionar métodos para atualizar e deletar usuários, se necessário
+
+    /**
+     * Atualiza um usuário existente no banco de dados.
+     * @param user O objeto User a ser atualizado.
+     * @throws SQLException se ocorrer um erro de banco de dados.
+     */
+    public void updateUser(User user) throws SQLException {
+        System.out.println("TODO: Implementar updateUser para o usuário " + user.getUsername());
+    }
+
+    /**
+     * Remove um usuário do banco de dados.
+     * @param userId O ID do usuário a ser removido.
+     * @throws SQLException se ocorrer um erro de banco de dados.
+     */
+    public void deleteUser(int userId) throws SQLException {
+        System.out.println("TODO: Implementar deleteUser para o usuário com ID " + userId);
+    }
 } 
