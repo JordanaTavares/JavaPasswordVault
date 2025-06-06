@@ -11,11 +11,14 @@ import com.passwordvault.utils.ConsoleUtils;
 import com.passwordvault.utils.ValidationUtils;
 import org.mindrot.jbcrypt.BCrypt;
 
+import com.passwordvault.repository.DatabaseCredentialRepository.DatabaseType;
+
 import javax.crypto.SecretKey;
 import java.security.SecureRandom;
 import java.util.List;
 import java.util.Scanner;
 import java.util.Base64;
+import java.util.Map;
 
 /**
  * Controlador principal que gerencia todas as operações do sistema.
@@ -33,6 +36,9 @@ public class PasswordVaultController {
 
     private static final int SALT_LENGTH = 16;
     private final SecureRandom secureRandom;
+
+    // Novo campo para rastrear o modo offline
+    private boolean isOfflineMode = false; // Inicia no modo online por padrão
 
     public PasswordVaultController() throws Exception {
         this.userRepository = new DatabaseUserRepository();
@@ -67,7 +73,7 @@ public class PasswordVaultController {
                         break;
                     case 2:
                         authenticateUser(); // Tenta autenticar
-                        if (!isAuthenticated) {
+        if (!isAuthenticated) {
                             ConsoleUtils.printInfo("\nAutenticação falhou. Tente novamente.");
                         }
                         break;
@@ -87,10 +93,10 @@ public class PasswordVaultController {
 
                 ConsoleUtils.printSuccess("Autenticação bem-sucedida! Entrando no menu principal...");
 
-                while (isAuthenticated) {
-                    showMenu();
-                    int choice = getIntInput("Escolha uma opção: ");
-                    processChoice(choice);
+        while (isAuthenticated) {
+            showMenu();
+            int choice = getIntInput("Escolha uma opção: ");
+            processChoice(choice);
                 }
             } else {
                  if (!isAuthenticated && !exitInitialMenu) { // Mensagem apenas se não autenticado E não escolheu sair
@@ -148,38 +154,62 @@ public class PasswordVaultController {
         String qrCodeUrl = twoFactorAuth.generateNewSecretKey();
         ConsoleUtils.printInfo("Escaneie o QR Code com o Google Authenticator:");
         System.out.println(qrCodeUrl);
-        ConsoleUtils.printWarning("Guarde esta chave secreta em um lugar seguro: " + twoFactorAuth.getSecretKey());
+        String secretKey = twoFactorAuth.getSecretKey();
+        ConsoleUtils.printWarning("Guarde esta chave secreta em um lugar seguro: " + secretKey);
+        ConsoleUtils.printInfo("Após escanear o QR Code, aguarde alguns segundos para o código aparecer no aplicativo.");
+        ConsoleUtils.printInfo("O código muda a cada 30 segundos.");
 
-        String code = getValidatedInput("Digite o código do Google Authenticator para verificar: ", ValidationUtils::validate2FACode);
+        int maxAttempts = 3;
+        int attempts = 0;
+        boolean verified = false;
 
-        if (twoFactorAuth.verifyCode(Integer.parseInt(code))) {
-            try {
-                 User newUser = new User(username, BCrypt.hashpw(masterPassword, BCrypt.gensalt()), twoFactorAuth.getSecretKey(), encryptionSalt);
-                 userRepository.saveUser(newUser);
-                 ConsoleUtils.printSuccess("\nUsuário '" + username + "' configurado com sucesso!");
-                 
-                 // Após a criação bem-sucedida, autenticar o usuário recém-criado
-                 this.loggedInUser = newUser; // Definir o usuário logado
-                 // Re-derivar a chave de criptografia usando a senha mestra e o sal do novo usuário
-                 SecretKey derivedKey = EncryptionService.deriveKey(masterPassword, Base64.getDecoder().decode(loggedInUser.getEncryptionSalt()));
-                 this.encryptionService = new EncryptionService(derivedKey);
-                 // Inicializar o repositório de credenciais com o novo serviço de criptografia
-                 this.credentialRepository = new DatabaseCredentialRepository(this.encryptionService);
-                 
-                 this.tempMasterPassword = null; // Limpar a senha mestra temporária
-                 this.isAuthenticated = true; // Marcar como autenticado
-
-                 // ConsoleUtils.printInfo("Por favor, execute o programa novamente para fazer login."); // Não é mais necessário reiniciar
-                 // isAuthenticated = false; // Não definir como false após criação
-            } catch (Exception e) { // Captura SQLException e Exception da derivação de chave
-                 ConsoleUtils.printError("Erro ao salvar o usuário ou inicializar serviços: " + e.getMessage());
-                 // Dependendo da gravidade do erro, pode-se querer sair ou tentar novamente.
-                 // Por enquanto, apenas logamos o erro e o usuário permanece não autenticado.
-                 this.isAuthenticated = false;
+        while (!verified && attempts < maxAttempts) {
+            String code = getValidatedInput("Digite o código do Google Authenticator: ", ValidationUtils::validate2FACode);
+            
+            // Garantir que a chave secreta está configurada
+            twoFactorAuth.setSecretKey(secretKey);
+            
+            if (twoFactorAuth.verifyCode(Integer.parseInt(code))) {
+                verified = true;
+                try {
+                    User newUser = new User(username, BCrypt.hashpw(masterPassword, BCrypt.gensalt()), secretKey, encryptionSalt);
+                    
+                    // Salvar no banco local
+                    userRepository.saveUser(newUser, DatabaseUserRepository.DatabaseType.LOCAL);
+                    ConsoleUtils.printSuccess("\nUsuário criado com sucesso no banco local!");
+                    
+                    // Salvar no banco remoto
+                    try {
+                        userRepository.saveUser(newUser, DatabaseUserRepository.DatabaseType.REMOTE);
+                        ConsoleUtils.printSuccess("Usuário sincronizado com o banco remoto!");
+                    } catch (Exception e) {
+                        ConsoleUtils.printWarning("Não foi possível salvar no banco remoto. O usuário será sincronizado posteriormente.");
+                        ConsoleUtils.printWarning("Erro: " + e.getMessage());
+                    }
+                    
+                    this.loggedInUser = newUser;
+                    SecretKey derivedKey = EncryptionService.deriveKey(masterPassword, Base64.getDecoder().decode(loggedInUser.getEncryptionSalt()));
+                    this.encryptionService = new EncryptionService(derivedKey);
+                    this.credentialRepository = new DatabaseCredentialRepository(this.encryptionService, this.userRepository);
+                    
+                    this.tempMasterPassword = null;
+                    this.isAuthenticated = true;
+                } catch (Exception e) {
+                    ConsoleUtils.printError("Erro ao salvar o usuário ou inicializar serviços: " + e.getMessage());
+                    this.isAuthenticated = false;
+                }
+            } else {
+                attempts++;
+                if (attempts < maxAttempts) {
+                    ConsoleUtils.printError("Código 2FA inválido. Tentativas restantes: " + (maxAttempts - attempts));
+                    ConsoleUtils.printInfo("Certifique-se de que o código está atualizado no aplicativo.");
+                } else {
+                    ConsoleUtils.printError("Número máximo de tentativas excedido. Configuração falhou.");
+                    ConsoleUtils.printInfo("Por favor, tente novamente.");
+                    setupFirstUser();
+                    return;
+                }
             }
-        } else {
-            ConsoleUtils.printError("Código 2FA inválido. Configuração falhou. Tente novamente.");
-            setupFirstUser();
         }
     }
 
@@ -194,7 +224,17 @@ public class PasswordVaultController {
         String username = getStringInput("Nome de usuário: ");
 
         try {
-            User userToAuthenticate = userRepository.findUserByUsername(username);
+            // Tentar encontrar o usuário primeiro no banco remoto
+            User userToAuthenticate = userRepository.findUserByUsername(username, DatabaseUserRepository.DatabaseType.REMOTE);
+            
+            // Se não encontrar no remoto, tentar no local
+            if (userToAuthenticate == null) {
+                userToAuthenticate = userRepository.findUserByUsername(username, DatabaseUserRepository.DatabaseType.LOCAL);
+                if (userToAuthenticate != null) {
+                    isOfflineMode = true; // Ativar modo offline automaticamente
+                    ConsoleUtils.printWarning("Usuário encontrado apenas no banco local. Ativando modo offline.");
+                }
+            }
 
             if (userToAuthenticate == null) {
                 ConsoleUtils.printError("Usuário não encontrado.");
@@ -203,7 +243,7 @@ public class PasswordVaultController {
                 if (choice == 2) {
                     setupFirstUser();
                 } else {
-                     authenticateUser();
+                    authenticateUser();
                 }
                 return;
             }
@@ -220,26 +260,32 @@ public class PasswordVaultController {
                 twoFactorAuth.setSecretKey(this.loggedInUser.getTwoFactorSecret());
                 authenticate2FA();
 
-                 // Se a autenticação 2FA for bem-sucedida, derivar a chave e inicializar serviços.
-                 if (isAuthenticated) {
-                      try {
-                          SecretKey derivedKey = EncryptionService.deriveKey(this.tempMasterPassword, Base64.getDecoder().decode(loggedInUser.getEncryptionSalt()));
-                          this.encryptionService = new EncryptionService(derivedKey);
-                          this.credentialRepository = new DatabaseCredentialRepository(this.encryptionService);
-                      } catch (Exception e) {
-                           ConsoleUtils.printError("Erro durante a derivação da chave ou inicialização dos serviços: " + e.getMessage());
-                           isAuthenticated = false;
-                      }
-                 }
+                // Se a autenticação 2FA for bem-sucedida, derivar a chave e inicializar serviços.
+                if (isAuthenticated) {
+                    try {
+                        SecretKey derivedKey = EncryptionService.deriveKey(this.tempMasterPassword, Base64.getDecoder().decode(loggedInUser.getEncryptionSalt()));
+                        this.encryptionService = new EncryptionService(derivedKey);
+                        this.credentialRepository = new DatabaseCredentialRepository(this.encryptionService, this.userRepository);
+                    } catch (Exception e) {
+                        ConsoleUtils.printError("Erro durante a derivação da chave ou inicialização dos serviços: " + e.getMessage());
+                        isAuthenticated = false;
+                    }
+                }
 
             } else {
                 ConsoleUtils.printError("Senha mestra incorreta.");
-                 this.tempMasterPassword = null; // Limpar senha temporária
+                this.tempMasterPassword = null; // Limpar senha temporária
                 authenticateUser();
             }
         } catch (Exception e) {
-            ConsoleUtils.printError("Erro de banco de dados durante a autenticação: " + e.getMessage());
-            isAuthenticated = false;
+            ConsoleUtils.printError("Erro durante a autenticação: " + e.getMessage());
+            if (e.getMessage().contains("Communications link failure")) {
+                ConsoleUtils.printWarning("Problema de conexão com o banco remoto. Tentando modo offline...");
+                isOfflineMode = true;
+                authenticateUser(); // Tentar novamente em modo offline
+            } else {
+                isAuthenticated = false;
+            }
         }
     }
 
@@ -267,13 +313,21 @@ public class PasswordVaultController {
     private void showMenu() {
         ConsoleUtils.clearScreen();
         ConsoleUtils.printHeader(" MENU PRINCIPAL ");
+        
+        // Mostrar informações do usuário logado e modo atual
+        System.out.println();
+        ConsoleUtils.printInfo("Usuário: " + ConsoleUtils.BOLD + ConsoleUtils.GREEN + loggedInUser.getUsername() + ConsoleUtils.RESET);
+        ConsoleUtils.printInfo("Modo: " + (isOfflineMode ? ConsoleUtils.RED + "Offline" : ConsoleUtils.GREEN + "Online") + ConsoleUtils.RESET);
+        
         System.out.println();
         ConsoleUtils.printMenuOption(1, "Adicionar nova credencial");
         ConsoleUtils.printMenuOption(2, "Listar todas as credenciais");
         ConsoleUtils.printMenuOption(3, "Buscar credencial por serviço");
         ConsoleUtils.printMenuOption(4, "Gerar senha forte");
         ConsoleUtils.printMenuOption(5, "Verificar senha");
-        ConsoleUtils.printMenuOption(6, "Sair");
+        ConsoleUtils.printMenuOption(6, "Modo Offline / Sincronização");
+        ConsoleUtils.printMenuOption(7, "Ver detalhes do usuário");
+        ConsoleUtils.printMenuOption(8, "Sair");
         System.out.println();
         ConsoleUtils.printInfo("Use os números para selecionar uma opção.");
         ConsoleUtils.printDivider();
@@ -291,7 +345,9 @@ public class PasswordVaultController {
                 case 3 -> searchByService();
                 case 4 -> generatePassword();
                 case 5 -> checkPassword();
-                case 6 -> {
+                case 6 -> handleSyncOptions();
+                case 7 -> showUserDetails();
+                case 8 -> {
                     isAuthenticated = false;
                     ConsoleUtils.printInfo("Saindo...");
                 }
@@ -300,7 +356,7 @@ public class PasswordVaultController {
         } catch (Exception e) {
             ConsoleUtils.printError("Erro: " + e.getMessage());
         } finally {
-             if (choice >= 1 && choice <= 5) {
+             if (choice >= 1 && choice <= 7) { // Opções 1-7 são operações que podem precisar de pausa
                  ConsoleUtils.waitForEnter("Pressione Enter para continuar...");
              }
         }
@@ -313,6 +369,15 @@ public class PasswordVaultController {
     private void addCredential() throws Exception {
         if (loggedInUser == null) {
             ConsoleUtils.printError("Nenhum usuário logado.");
+            return;
+        }
+
+        // Determinar qual repositório usar (local ou remoto)
+        DatabaseCredentialRepository currentCredentialRepository = this.credentialRepository;
+        DatabaseType currentDbType = isOfflineMode ? DatabaseType.LOCAL : DatabaseType.REMOTE;
+
+        if (currentCredentialRepository == null) {
+            ConsoleUtils.printError("Repositório de credenciais não inicializado.");
             return;
         }
 
@@ -345,7 +410,8 @@ public class PasswordVaultController {
         Credential newCredential = new Credential(service, email, password);
 
         try {
-             credentialRepository.addCredential(loggedInUser.getUserId(), newCredential);
+             // Usar o repositório determinado (local ou remoto)
+             currentCredentialRepository.addCredential(loggedInUser.getUserId(), newCredential, currentDbType);
              ConsoleUtils.printSuccess("Credencial adicionada com sucesso!");
         } catch (Exception e) {
              ConsoleUtils.printError("Erro ao salvar a credencial no banco de dados: " + e.getMessage());
@@ -361,16 +427,26 @@ public class PasswordVaultController {
             return;
         }
 
+        // Determinar qual repositório usar (local ou remoto)
+        DatabaseCredentialRepository currentCredentialRepository = this.credentialRepository;
+        DatabaseType currentDbType = isOfflineMode ? DatabaseType.LOCAL : DatabaseType.REMOTE;
+
+        if (currentCredentialRepository == null) {
+            ConsoleUtils.printError("Repositório de credenciais não inicializado.");
+            return;
+        }
+
         ConsoleUtils.printHeader("Credenciais");
 
         try {
-             List<Credential> credentials = credentialRepository.findAllByUserId(loggedInUser.getUserId());
+             // Usar o repositório determinado (local ou remoto)
+             List<Credential> credentials = currentCredentialRepository.findAllByUserId(loggedInUser.getUserId(), currentDbType);
              if (credentials.isEmpty()) {
                  ConsoleUtils.printInfo("Nenhuma credencial cadastrada para este usuário.");
-                 return;
-             }
+            return;
+        }
 
-             for (Credential credential : credentials) {
+        for (Credential credential : credentials) {
                  ConsoleUtils.printDivider();
                   ConsoleUtils.printInfo(String.format("%sServiço: %s%s\n%sEmail: %s%s\n%sSenha: %s%s\n%sCriado em: %s%s\n%sÚltima atualização: %s%s\n%sStatus: %s%s",
                           ConsoleUtils.BOLD + ConsoleUtils.CYAN,
@@ -402,12 +478,22 @@ public class PasswordVaultController {
              return;
          }
 
+        // Determinar qual repositório usar (local ou remoto)
+        DatabaseCredentialRepository currentCredentialRepository = this.credentialRepository;
+        DatabaseType currentDbType = isOfflineMode ? DatabaseType.LOCAL : DatabaseType.REMOTE;
+
+        if (currentCredentialRepository == null) {
+            ConsoleUtils.printError("Repositório de credenciais não inicializado.");
+            return;
+        }
+
         ConsoleUtils.printHeader("Buscar por Serviço");
         String service = getValidatedInput("Nome do serviço: ", ValidationUtils::validateService);
 
         try {
 
-              List<Credential> credentials = credentialRepository.findByUserIdAndService(loggedInUser.getUserId(), service);
+              // Usar o repositório determinado (local ou remoto)
+              List<Credential> credentials = currentCredentialRepository.findByUserIdAndService(loggedInUser.getUserId(), service, currentDbType);
 
               if (credentials.isEmpty()) {
                   ConsoleUtils.printInfo("Nenhuma credencial encontrada para o serviço: " + service);
@@ -415,7 +501,7 @@ public class PasswordVaultController {
               }
 
               ConsoleUtils.printInfo("Credenciais encontradas para o serviço: " + service);
-              for (Credential credential : credentials) {
+        for (Credential credential : credentials) {
                   ConsoleUtils.printDivider();
                    ConsoleUtils.printInfo(String.format("%sServiço: %s%s\n%sEmail: %s%s\n%sSenha: %s%s\n%sCriado em: %s%s\n%sÚltima atualização: %s%s\n%sStatus: %s%s",
                            ConsoleUtils.BOLD + ConsoleUtils.CYAN,
@@ -460,11 +546,155 @@ public class PasswordVaultController {
         ConsoleUtils.printHeader("Verificar Senha");
         String password = getValidatedInput("Digite a senha para verificar: ", ValidationUtils::validatePassword);
         int breaches = breachChecker.checkPassword(password);
-
+        
         if (breaches > 0) {
             ConsoleUtils.printWarning("⚠️ ATENÇÃO: Esta senha foi vazada " + breaches + " vezes!");
         } else {
             ConsoleUtils.printSuccess("✅ Esta senha não foi encontrada em vazamentos conhecidos.");
+        }
+    }
+
+    /**
+     * Método placeholder para lidar com as opções de modo offline e sincronização.
+     */
+    private void handleSyncOptions() {
+        ConsoleUtils.printHeader("Modo Offline / Sincronização");
+        // ConsoleUtils.printInfo("TODO: Implementar lógica de modo offline e sincronização aqui.");
+        // Aqui no futuro adicionaremos sub-opções como:
+        // 1. Sincronizar agora
+        // 2. Configurar sincronização
+        // 3. Ativar/Desativar modo offline
+        // ...
+
+        boolean exitSyncMenu = false;
+        while (!exitSyncMenu) {
+            showSyncMenu();
+            int choice = getIntInput("Escolha uma opção: ");
+
+            switch (choice) {
+                case 1:
+                    performSync(); // Lógica de sincronização
+                    break;
+                case 2:
+                    configureSync(); // Configuração da sincronização
+                    break;
+                case 3:
+                    toggleOfflineMode(); // Novo método para alternar modo offline
+                    break;
+                case 4:
+                    ConsoleUtils.printInfo("Voltando para o Menu Principal...");
+                    exitSyncMenu = true;
+                    break;
+                default:
+                    ConsoleUtils.printError("Opção inválida!");
+                    break;
+            }
+             if (!exitSyncMenu) { // Pausar apenas se não estiver saindo do sub-menu
+                 ConsoleUtils.waitForEnter("Pressione Enter para continuar...");
+             }
+        }
+    }
+
+    /**
+     * Exibe o sub-menu para opções de modo offline e sincronização.
+     */
+    private void showSyncMenu() {
+        ConsoleUtils.clearScreen();
+        ConsoleUtils.printHeader("Sincronização e Offline");
+        System.out.println();
+        ConsoleUtils.printMenuOption(1, "Sincronizar agora");
+        ConsoleUtils.printMenuOption(2, "Configurar sincronização");
+        ConsoleUtils.printMenuOption(3, "Ativar/Desativar modo offline");
+        ConsoleUtils.printMenuOption(4, "Voltar");
+        System.out.println();
+        ConsoleUtils.printInfo("Use os números para selecionar uma opção.");
+        ConsoleUtils.printDivider();
+    }
+
+    /**
+     * Realiza a sincronização entre o banco local e remoto.
+     */
+    private void performSync() {
+        ConsoleUtils.printHeader("Sincronizar Agora");
+        
+        if (loggedInUser == null) {
+            ConsoleUtils.printError("Nenhum usuário logado.");
+            return;
+        }
+
+        try {
+            ConsoleUtils.printInfo("Iniciando sincronização...");
+            // Sincronizar apenas o usuário atual
+            Map<String, Integer> currentUserMap = userRepository.syncSingleUser(loggedInUser);
+            
+            // Sincronizar apenas as credenciais do usuário atual
+            credentialRepository.syncCredentials(loggedInUser.getUserId(), currentUserMap);
+            ConsoleUtils.printSuccess("Sincronização concluída com sucesso!");
+        } catch (Exception e) {
+            ConsoleUtils.printError("Erro durante a sincronização: " + e.getMessage());
+        }
+    }
+
+    /**
+     * Método para configuração de sincronização.
+     */
+    private void configureSync() {
+        ConsoleUtils.printHeader("Configurar Sincronização");
+        ConsoleUtils.printInfo("Esta funcionalidade será implementada em versões futuras.");
+    }
+
+    /**
+     * Alterna entre modo online e offline.
+     */
+    private void toggleOfflineMode() {
+        isOfflineMode = !isOfflineMode;
+        ConsoleUtils.printSuccess("Modo Offline: " + (isOfflineMode ? ConsoleUtils.GREEN + "ATIVADO" : ConsoleUtils.RED + "DESATIVADO") + ConsoleUtils.RESET);
+    }
+
+    /**
+     * Mostra os detalhes do usuário atual.
+     */
+    private void showUserDetails() {
+        ConsoleUtils.printHeader("Detalhes do Usuário");
+        
+        ConsoleUtils.printInfo(String.format("%sID: %s%d%s",
+            ConsoleUtils.BOLD + ConsoleUtils.CYAN,
+            ConsoleUtils.GREEN,
+            loggedInUser.getUserId(),
+            ConsoleUtils.RESET));
+            
+        ConsoleUtils.printInfo(String.format("%sNome de usuário: %s%s%s",
+            ConsoleUtils.BOLD + ConsoleUtils.CYAN,
+            ConsoleUtils.GREEN,
+            loggedInUser.getUsername(),
+            ConsoleUtils.RESET));
+            
+        ConsoleUtils.printInfo(String.format("%sChave 2FA: %s%s%s",
+            ConsoleUtils.BOLD + ConsoleUtils.CYAN,
+            ConsoleUtils.GREEN,
+            loggedInUser.getTwoFactorSecret(),
+            ConsoleUtils.RESET));
+            
+        ConsoleUtils.printWarning("\nIMPORTANTE: Mantenha sua chave 2FA em um local seguro!");
+        
+        try {
+            // Buscar quantidade de credenciais
+            DatabaseType currentDbType = isOfflineMode ? DatabaseType.LOCAL : DatabaseType.REMOTE;
+            List<Credential> credentials = credentialRepository.findAllByUserId(loggedInUser.getUserId(), currentDbType);
+            
+            ConsoleUtils.printInfo(String.format("%sTotal de credenciais: %s%d%s",
+                ConsoleUtils.BOLD + ConsoleUtils.CYAN,
+                ConsoleUtils.GREEN,
+                credentials.size(),
+                ConsoleUtils.RESET));
+                
+            // Contar credenciais comprometidas
+            long compromisedCount = credentials.stream().filter(Credential::isCompromised).count();
+            if (compromisedCount > 0) {
+                ConsoleUtils.printWarning(String.format("Credenciais comprometidas: %d", compromisedCount));
+            }
+        } catch (Exception e) {
+            ConsoleUtils.printError("Erro ao buscar credenciais: " + e.getMessage());
         }
     }
 
@@ -473,7 +703,7 @@ public class PasswordVaultController {
              return "O nome de usuário não pode estar vazio.";
          }
          return null;
-     }
+    }
 
     private String getStringInput(String prompt) {
         System.out.print(prompt);

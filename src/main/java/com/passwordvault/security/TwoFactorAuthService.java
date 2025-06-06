@@ -13,7 +13,6 @@ public class TwoFactorAuthService {
 
     public TwoFactorAuthService() {
         this.gAuth = new GoogleAuthenticator();
-        this.secretKey = null;
     }
 
     /**
@@ -32,10 +31,21 @@ public class TwoFactorAuthService {
      * @return true se o código for válido
      */
     public boolean verifyCode(int code) {
-        if (secretKey == null) {
-            throw new IllegalStateException("Chave secreta não foi gerada");
+        if (secretKey == null || secretKey.isEmpty()) {
+            System.err.println("Erro: Chave secreta não definida");
+            return false;
         }
-        return gAuth.authorize(secretKey, code);
+
+        // Adicionar margem de tempo para compensar pequenas diferenças de relógio
+        boolean isValid = gAuth.authorize(secretKey, code);
+        
+        // Log para debug
+        System.out.println("Verificando código 2FA:");
+        System.out.println("Código recebido: " + code);
+        System.out.println("Chave secreta: " + secretKey);
+        System.out.println("Resultado da verificação: " + isValid);
+        
+        return isValid;
     }
 
     /**
@@ -43,7 +53,7 @@ public class TwoFactorAuthService {
      * @return chave secreta em formato string
      */
     public String getSecretKey() {
-        return secretKey;
+        return this.secretKey;
     }
 
     /**

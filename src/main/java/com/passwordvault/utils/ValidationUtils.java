@@ -66,14 +66,23 @@ public class ValidationUtils {
      * @return null se o código for válido, ou uma mensagem de erro caso contrário.
      */
     public static String validate2FACode(String code) {
-        if (code == null || code.length() != 6) {
-            return "O código 2FA deve ter 6 dígitos.";
+        if (code == null || code.trim().isEmpty()) {
+            return "O código 2FA não pode estar vazio.";
         }
+        
+        // Remover espaços e caracteres não numéricos
+        code = code.replaceAll("[^0-9]", "");
+        
+        if (code.length() != 6) {
+            return "O código 2FA deve ter exatamente 6 dígitos.";
+        }
+        
         try {
             Integer.parseInt(code);
-            return null;
         } catch (NumberFormatException e) {
             return "O código 2FA deve conter apenas números.";
         }
+        
+        return null;
     }
 } 

@@ -7,17 +7,18 @@ import java.util.UUID;
  * Representa uma credencial armazenada no sistema.
  */
 public class Credential {
-    private int credentialId; // Gerado pelo BD
-    private UUID id; // UUID interno
+    private int credentialId; // ID local do banco de dados (AUTO_INCREMENT)
+    private UUID id; // ID universal (UUID) para sincronização
     private String service;
     private String email;
-    private String password; // Senha pura em memória, será criptografada para armazenamento
+    private String password; // Senha (pode ser pura ou descriptografada dependendo do uso)
     private LocalDateTime createdAt;
     private LocalDateTime updatedAt;
     private boolean isCompromised;
+    private int userId; // Novo campo para armazenar o ID do usuário
 
     // Construtor para carregar do BD
-    public Credential(int credentialId, UUID id, String service, String email, String password, LocalDateTime createdAt, LocalDateTime updatedAt, boolean isCompromised) {
+    public Credential(int credentialId, UUID id, String service, String email, String password, LocalDateTime createdAt, LocalDateTime updatedAt, boolean isCompromised, int userId) {
         this.credentialId = credentialId;
         this.id = id;
         this.service = service;
@@ -26,6 +27,7 @@ public class Credential {
         this.createdAt = createdAt;
         this.updatedAt = updatedAt;
         this.isCompromised = isCompromised;
+        this.userId = userId;
     }
 
     // Construtor para criar nova credencial
@@ -73,6 +75,10 @@ public class Credential {
         return isCompromised;
     }
 
+    public int getUserId() {
+        return userId;
+    }
+
     // Setters (apenas para campos que podem mudar ou ser definidos após a criação)
 
     public void setCredentialId(int credentialId) {
@@ -93,6 +99,10 @@ public class Credential {
         isCompromised = compromised;
     }
 
+    public void setUserId(int userId) {
+        this.userId = userId;
+    }
+
     // Omitindo setters para campos que não devem mudar após a criação (id, service, email, createdAt)
 
     @Override
@@ -106,6 +116,7 @@ public class Credential {
                ", createdAt=" + createdAt +
                ", updatedAt=" + updatedAt +
                ", isCompromised=" + isCompromised +
+               ", userId=" + userId +
                '}';
     }
 } 
