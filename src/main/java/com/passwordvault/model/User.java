@@ -53,7 +53,6 @@ public class User {
         this.userId = userId;
     }
 
-    // TODO: Adicionar setters se necessário, mas manter a imutabilidade onde possível
 
     @Override
     public String toString() {
