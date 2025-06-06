@@ -1,17 +1,13 @@
 package com.passwordvault.security;
 
-import com.google.gson.Gson;
 import com.google.gson.JsonSyntaxException;
 import okhttp3.OkHttpClient;
 import okhttp3.Request;
 import okhttp3.Response;
 
 import java.io.IOException;
-import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
-import java.util.HashMap;
-import java.util.Map;
 
 /**
  * Verifica se uma senha aparece em vazamentos conhecidos usando a API Have I Been Pwned.
@@ -20,7 +16,6 @@ public class PasswordBreachChecker {
 
     private static final String HIBP_API_URL = "https://api.pwnedpasswords.com/range/";
     private final OkHttpClient httpClient = new OkHttpClient();
-    private final Gson gson = new Gson();
 
     /**
      * Verifica se uma senha foi comprometida.
@@ -92,7 +87,7 @@ public class PasswordBreachChecker {
      */
     private String sha1(String text) throws NoSuchAlgorithmException {
         MessageDigest md = MessageDigest.getInstance("SHA-1");
-        byte[] textBytes = text.getBytes(StandardCharsets.UTF_8);
+        byte[] textBytes = text.getBytes();
         md.update(textBytes);
         byte[] digest = md.digest();
         StringBuilder hexString = new StringBuilder();
