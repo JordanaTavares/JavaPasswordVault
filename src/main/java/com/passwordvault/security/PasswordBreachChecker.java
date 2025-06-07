@@ -54,7 +54,7 @@ public class PasswordBreachChecker {
                         int count = Integer.parseInt(parts[1].trim());
                         if (currentSuffix.equalsIgnoreCase(suffix)) {
                             return count; // Encontrada, retorna a contagem
-                        }
+            }
                     }
                 }
 
