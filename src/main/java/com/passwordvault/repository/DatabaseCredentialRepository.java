@@ -327,8 +327,26 @@ public class DatabaseCredentialRepository {
                     // Credencial existe apenas no remoto - adicionar ao local com o ID de usuário local correto
                     System.out.println("Sincronizando credencial remota para local (adicionar): " + remoteCred.getService() + " para usuário local ID " + localUserIdForCred);
                     // Antes de adicionar ao local, definimos o user_id da credencial para o ID local correspondente
-                    remoteCred.setUserId(localUserIdForCred); 
-                    addCredential(localUserIdForCred, remoteCred, DatabaseType.LOCAL); // Usar localUserIdForCred aqui
+                    remoteCred.setUserId(localUserIdForCred);
+                    try {
+                        // Verificar se já existe uma credencial com o mesmo UUID
+                        String checkSql = "SELECT credential_id FROM credentials WHERE id = ?";
+                        try (PreparedStatement checkStmt = conn.prepareStatement(checkSql)) {
+                            checkStmt.setString(1, remoteCred.getId().toString());
+                            ResultSet rs = checkStmt.executeQuery();
+                            if (rs.next()) {
+                                // Se já existe, atualizar em vez de adicionar
+                                System.out.println("Credencial com UUID " + remoteCred.getId() + " já existe, atualizando...");
+                                updateCredential(localUserIdForCred, remoteCred, DatabaseType.LOCAL);
+                            } else {
+                                // Se não existe, adicionar normalmente
+                                addCredential(localUserIdForCred, remoteCred, DatabaseType.LOCAL);
+                            }
+                        }
+                    } catch (SQLException e) {
+                        System.err.println("Erro ao sincronizar credencial: " + e.getMessage());
+                        continue; // Continuar com a próxima credencial
+                    }
                 } else if (remoteCred.getUpdatedAt().isAfter(localCred.getUpdatedAt())) {
                     // Credencial remota é mais recente - atualizar local com o ID de usuário local correto
                     System.out.println("Sincronizando credencial remota para local (atualizar): " + remoteCred.getService() + " para usuário local ID " + localUserIdForCred);

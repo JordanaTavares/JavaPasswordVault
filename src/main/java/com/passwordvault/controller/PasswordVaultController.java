@@ -705,6 +705,9 @@ public class PasswordVaultController {
             ConsoleUtils.printSuccess("Sincronização concluída com sucesso!");
         } catch (Exception e) {
             ConsoleUtils.printError("Erro durante a sincronização: " + e.getMessage());
+            if (e.getMessage() != null && e.getMessage().contains("Duplicate entry")) {
+                ConsoleUtils.printInfo("Este erro pode ocorrer durante a primeira sincronização. Tente novamente para resolver.");
+            }
         }
     }
 
