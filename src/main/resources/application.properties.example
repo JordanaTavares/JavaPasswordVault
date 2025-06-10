@@ -1,0 +1,24 @@
+# Configurações do Banco de Dados Local
+db.local.url=jdbc:mysql://localhost:3306/password_vault
+db.local.user=vault_user
+db.local.password=sua_senha_segura
+
+# Configurações do Banco de Dados Remoto (Railway)
+db.url=jdbc:mysql://seu_host_railway:porta/seu_banco
+db.user=seu_usuario_railway
+db.password=sua_senha_railway
+
+# Configurações de Segurança
+security.encryption.iterations=310000
+security.token.expiration=3600
+security.session.timeout=15
+
+# Configurações do Sistema
+app.name=Password Vault
+app.version=1.0
+app.locale=pt_BR
+
+# Configurações de Conexão
+db.connection.timeout=30
+db.connection.pool.size=10
+db.connection.idle.timeout=300 

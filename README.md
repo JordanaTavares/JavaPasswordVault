@@ -13,6 +13,7 @@ Um gerenciador de senhas seguro e fácil de usar, desenvolvido em Java. Proteja 
 - [Instalação](#instalação)
 - [Como Usar](#como-usar)
 - [Segurança](#segurança)
+- [🗄️ Estrutura do Banco de Dados](#🗄️-estrutura-do-banco-de-dados)
 
 ## ✨ Recursos
 
@@ -555,6 +556,66 @@ Para suporte ou dúvidas, abra uma issue no GitHub ou contate o administrador do
 ## 📜 Licença
 
 Este projeto está licenciado sob a Licença MIT - veja o arquivo [LICENSE](LICENSE) para detalhes.
+
+## 🗄️ Estrutura do Banco de Dados
+
+O sistema utiliza duas tabelas principais:
+
+### Tabela `users`
+```sql
+CREATE TABLE users (
+    user_id INT AUTO_INCREMENT PRIMARY KEY,
+    username VARCHAR(50) UNIQUE NOT NULL,
+    hashed_password VARCHAR(255) NOT NULL,
+    two_factor_secret VARCHAR(32) NOT NULL,
+    encryption_salt VARCHAR(32) NOT NULL,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    last_login TIMESTAMP
+);
+```
+
+### Tabela `credentials`
+```sql
+CREATE TABLE credentials (
+    credential_id INT AUTO_INCREMENT PRIMARY KEY,
+    id VARCHAR(36) NOT NULL,
+    user_id INT NOT NULL,
+    service VARCHAR(100) NOT NULL,
+    email VARCHAR(100) NOT NULL,
+    encrypted_password TEXT NOT NULL,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    is_compromised BOOLEAN DEFAULT FALSE,
+    FOREIGN KEY (user_id) REFERENCES users(id),
+    INDEX idx_user_service (user_id, service)
+);
+```
+
+### Campos Importantes
+
+#### Tabela `users`:
+- `user_id`: Identificador único do usuário
+- `username`: Nome de usuário único
+- `hashed_password`: Senha criptografada com BCrypt
+- `two_factor_secret`: Chave secreta para autenticação 2FA
+- `encryption_salt`: Salt único para criptografia das senhas
+- `created_at`: Data de criação da conta
+- `last_login`: Último acesso do usuário
+
+#### Tabela `credentials`:
+- `credential_id`: Identificador único da credencial
+- `id`: UUID da credencial
+- `user_id`: ID do usuário proprietário
+- `service`: Nome do serviço (ex: "Gmail", "Facebook")
+- `email`: Email/usuário da credencial
+- `encrypted_password`: Senha criptografada com AES-GCM
+- `created_at`: Data de criação da credencial
+- `updated_at`: Data da última atualização
+- `is_compromised`: Indica se a senha foi comprometida
+
+### Índices
+- Índice único em `users.username` para busca rápida de usuários
+- Índice composto em `credentials(user_id, service)` para busca rápida de credenciais
 
 ---
 
