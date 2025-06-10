@@ -56,61 +56,36 @@ public class PasswordVaultController {
     public void start() {
         ConsoleUtils.clearScreen();
         ConsoleUtils.printHeader("Gerenciador de Senhas Seguro");
-
+        
         try {
-            // Removida a lógica de verificar apenas o usuário 'admin' na inicialização.
-            // Agora, apresentamos um menu inicial para criar ou logar.
-            boolean exitInitialMenu = false;
-            while (!isAuthenticated && !exitInitialMenu) {
-                showInitialMenu();
-                int choice = getIntInput("Escolha uma opção: ");
-
-                switch (choice) {
-                    case 1:
-                        setupFirstUser(); // Este método agora funciona para criar qualquer novo usuário.
-                        // Após criar um usuário, o sistema instrui o usuário a reiniciar/fazer login.
-                        exitInitialMenu = true; // Sair do loop após a configuração para instruir reinício.
-                        break;
-                    case 2:
-                        authenticateUser(); // Tenta autenticar
+            while (true) { // Loop principal infinito
         if (!isAuthenticated) {
-                            ConsoleUtils.printInfo("\nAutenticação falhou. Tente novamente.");
-                        }
-                        break;
-                    case 3:
-                        ConsoleUtils.printInfo("Saindo...");
-                        exitInitialMenu = true; // Sair do loop e encerrar aplicação
-                        break;
-                    default:
-                        ConsoleUtils.printError("Opção inválida!");
-                        break;
-                }
-            }
+                    showInitialMenu();
+                    int choice = getIntInput("Escolha uma opção: ");
 
-
-            if (isAuthenticated && loggedInUser != null) {
-                this.tempMasterPassword = null; // Limpar a senha mestra temporária da memória
-
-                ConsoleUtils.printSuccess("Autenticação bem-sucedida! Entrando no menu principal...");
-
-        while (isAuthenticated) {
+                    switch (choice) {
+                        case 1:
+                            setupFirstUser();
+                            break;
+                        case 2:
+                            authenticateUser();
+                            break;
+                        case 3:
+                            ConsoleUtils.printInfo("Saindo...");
+                            return; // Sai completamente do programa
+                        default:
+                            ConsoleUtils.printError("Opção inválida!");
+                            break;
+                    }
+                } else {
             showMenu();
             int choice = getIntInput("Escolha uma opção: ");
             processChoice(choice);
-                }
-            } else {
-                 if (!isAuthenticated && !exitInitialMenu) { // Mensagem apenas se não autenticado E não escolheu sair
-                     ConsoleUtils.printInfo("\nNão foi possível autenticar. Saindo...");
-                 }
-            }
-        } /*
-        catch (SQLException e) {
-             ConsoleUtils.printError("Erro de banco de dados durante a inicialização: " + e.getMessage());
-             System.exit(1);
-        } */
-        catch (Exception e) {
-             ConsoleUtils.printError("Ocorreu um erro inesperado durante a inicialização: " + e.getMessage());
-             System.exit(1);
+        }
+    }
+        } catch (Exception e) {
+            ConsoleUtils.printError("Ocorreu um erro inesperado durante a inicialização: " + e.getMessage());
+            System.exit(1);
         }
     }
 
@@ -136,79 +111,154 @@ public class PasswordVaultController {
     private void setupFirstUser() {
         ConsoleUtils.printHeader("Configuração do Primeiro Usuário");
 
-        String username = getValidatedInput("Escolha um nome de usuário (ex: admin): ", this::validateUsername);
-        String masterPassword = getValidatedInput("Crie sua senha mestra: ", ValidationUtils::validatePassword);
-        String confirmPassword = getStringInput("Confirme sua senha mestra: ");
-
-        if (!masterPassword.equals(confirmPassword)) {
-            ConsoleUtils.printError("As senhas não coincidem. Tente novamente.");
-            setupFirstUser();
-            return;
-        }
-
-        byte[] saltBytes = new byte[SALT_LENGTH];
-        secureRandom.nextBytes(saltBytes);
-        String encryptionSalt = Base64.getEncoder().encodeToString(saltBytes);
-
-        ConsoleUtils.printInfo("\nVamos configurar a autenticação de dois fatores.");
-        String qrCodeUrl = twoFactorAuth.generateNewSecretKey();
-        ConsoleUtils.printInfo("Escaneie o QR Code com o Google Authenticator:");
-        System.out.println(qrCodeUrl);
-        String secretKey = twoFactorAuth.getSecretKey();
-        ConsoleUtils.printWarning("Guarde esta chave secreta em um lugar seguro: " + secretKey);
-        ConsoleUtils.printInfo("Após escanear o QR Code, aguarde alguns segundos para o código aparecer no aplicativo.");
-        ConsoleUtils.printInfo("O código muda a cada 30 segundos.");
-
-        int maxAttempts = 3;
-        int attempts = 0;
-        boolean verified = false;
-
-        while (!verified && attempts < maxAttempts) {
-            String code = getValidatedInput("Digite o código do Google Authenticator: ", ValidationUtils::validate2FACode);
+        while (true) {
+            String username = getValidatedInput("Escolha um nome de usuário (ex: admin): ", this::validateUsername);
             
-            // Garantir que a chave secreta está configurada
-            twoFactorAuth.setSecretKey(secretKey);
-            
-            if (twoFactorAuth.verifyCode(Integer.parseInt(code))) {
-                verified = true;
-                try {
-                    User newUser = new User(username, BCrypt.hashpw(masterPassword, BCrypt.gensalt()), secretKey, encryptionSalt);
+            try {
+                // Verificar se o usuário já existe no banco local
+                User existingUser = userRepository.findUserByUsername(username, DatabaseUserRepository.DatabaseType.LOCAL);
+                if (existingUser != null) {
+                    ConsoleUtils.printError("Este nome de usuário já está em uso!");
+                    ConsoleUtils.printInfo("\nDeseja:");
+                    ConsoleUtils.printMenuOption(1, "Tentar outro nome de usuário");
+                    ConsoleUtils.printMenuOption(2, "Voltar ao menu principal");
                     
-                    // Salvar no banco local
-                    userRepository.saveUser(newUser, DatabaseUserRepository.DatabaseType.LOCAL);
-                    ConsoleUtils.printSuccess("\nUsuário criado com sucesso no banco local!");
-                    
-                    // Salvar no banco remoto
-                    try {
-                        userRepository.saveUser(newUser, DatabaseUserRepository.DatabaseType.REMOTE);
-                        ConsoleUtils.printSuccess("Usuário sincronizado com o banco remoto!");
-                    } catch (Exception e) {
-                        ConsoleUtils.printWarning("Não foi possível salvar no banco remoto. O usuário será sincronizado posteriormente.");
-                        ConsoleUtils.printWarning("Erro: " + e.getMessage());
+                    int choice = getIntInput("Escolha uma opção: ");
+                    if (choice == 2) {
+                        return;
                     }
-                    
-                    this.loggedInUser = newUser;
-                    SecretKey derivedKey = EncryptionService.deriveKey(masterPassword, Base64.getDecoder().decode(loggedInUser.getEncryptionSalt()));
-                    this.encryptionService = new EncryptionService(derivedKey);
-                    this.credentialRepository = new DatabaseCredentialRepository(this.encryptionService, this.userRepository);
-                    
-                    this.tempMasterPassword = null;
-                    this.isAuthenticated = true;
-                } catch (Exception e) {
-                    ConsoleUtils.printError("Erro ao salvar o usuário ou inicializar serviços: " + e.getMessage());
-                    this.isAuthenticated = false;
+                    continue; // Volta para pedir outro nome de usuário
                 }
-            } else {
-                attempts++;
-                if (attempts < maxAttempts) {
-                    ConsoleUtils.printError("Código 2FA inválido. Tentativas restantes: " + (maxAttempts - attempts));
-                    ConsoleUtils.printInfo("Certifique-se de que o código está atualizado no aplicativo.");
-                } else {
-                    ConsoleUtils.printError("Número máximo de tentativas excedido. Configuração falhou.");
-                    ConsoleUtils.printInfo("Por favor, tente novamente.");
-                    setupFirstUser();
+
+                // Verificar se o usuário já existe no banco remoto
+                existingUser = userRepository.findUserByUsername(username, DatabaseUserRepository.DatabaseType.REMOTE);
+                if (existingUser != null) {
+                    ConsoleUtils.printError("Este nome de usuário já está em uso no banco remoto!");
+                    ConsoleUtils.printInfo("\nDeseja:");
+                    ConsoleUtils.printMenuOption(1, "Tentar outro nome de usuário");
+                    ConsoleUtils.printMenuOption(2, "Voltar ao menu principal");
+                    
+                    int choice = getIntInput("Escolha uma opção: ");
+                    if (choice == 2) {
+                        return;
+                    }
+                    continue; // Volta para pedir outro nome de usuário
+                }
+
+                String masterPassword = getValidatedInput("Crie sua senha mestra: ", ValidationUtils::validatePassword);
+                String confirmPassword = getStringInput("Confirme sua senha mestra: ");
+
+                if (!masterPassword.equals(confirmPassword)) {
+                    ConsoleUtils.printError("As senhas não coincidem!");
+                    ConsoleUtils.printInfo("\nDeseja:");
+                    ConsoleUtils.printMenuOption(1, "Tentar novamente");
+                    ConsoleUtils.printMenuOption(2, "Voltar ao menu principal");
+        
+        int choice = getIntInput("Escolha uma opção: ");
+                    if (choice == 2) {
+                        return;
+                    }
+                    continue; // Volta para o início do processo
+                }
+
+                byte[] saltBytes = new byte[SALT_LENGTH];
+                secureRandom.nextBytes(saltBytes);
+                String encryptionSalt = Base64.getEncoder().encodeToString(saltBytes);
+
+                ConsoleUtils.printInfo("\nVamos configurar a autenticação de dois fatores.");
+                twoFactorAuth.setUsername(username);
+                String qrCodeUrl = twoFactorAuth.generateNewSecretKey();
+                ConsoleUtils.printInfo("Escaneie o QR Code com o Google Authenticator:");
+                System.out.println(qrCodeUrl);
+                String secretKey = twoFactorAuth.getSecretKey();
+                ConsoleUtils.printWarning("Guarde esta chave secreta em um lugar seguro: " + secretKey);
+                ConsoleUtils.printInfo("Após escanear o QR Code, aguarde alguns segundos para o código aparecer no aplicativo.");
+                ConsoleUtils.printInfo("O código muda a cada 30 segundos.");
+
+                int maxAttempts = 3;
+                int attempts = 0;
+                boolean verified = false;
+
+                while (!verified && attempts < maxAttempts) {
+                    String code = getValidatedInput("Digite o código do Google Authenticator: ", ValidationUtils::validate2FACode);
+                    
+                    // Limpar o código (remover espaços e caracteres não numéricos)
+                    code = code.replaceAll("[^0-9]", "");
+                    
+                    try {
+                        if (twoFactorAuth.verifyCode(Integer.parseInt(code))) {
+                            verified = true;
+                            try {
+                                User newUser = new User(username, BCrypt.hashpw(masterPassword, BCrypt.gensalt()), secretKey, encryptionSalt);
+                                
+                                // Salvar no banco local
+                                userRepository.saveUser(newUser, DatabaseUserRepository.DatabaseType.LOCAL);
+                                ConsoleUtils.printSuccess("\nUsuário criado com sucesso no banco local!");
+                                
+                                // Salvar no banco remoto
+                                try {
+                                    userRepository.saveUser(newUser, DatabaseUserRepository.DatabaseType.REMOTE);
+                                    ConsoleUtils.printSuccess("Usuário sincronizado com o banco remoto!");
+                                } catch (Exception e) {
+                                    ConsoleUtils.printWarning("Não foi possível salvar no banco remoto. O usuário será sincronizado posteriormente.");
+                                    ConsoleUtils.printWarning("Erro: " + e.getMessage());
+                                }
+                                
+                                this.loggedInUser = newUser;
+                                SecretKey derivedKey = EncryptionService.deriveKey(masterPassword, Base64.getDecoder().decode(loggedInUser.getEncryptionSalt()));
+                                this.encryptionService = new EncryptionService(derivedKey);
+                                this.credentialRepository = new DatabaseCredentialRepository(this.encryptionService, this.userRepository);
+                                
+                                this.tempMasterPassword = null;
+                                this.isAuthenticated = true;
+                                return; // Sucesso! Sair do método
+                            } catch (Exception e) {
+                                ConsoleUtils.printError("Erro ao salvar o usuário ou inicializar serviços: " + e.getMessage());
+                                ConsoleUtils.printInfo("\nDeseja:");
+                                ConsoleUtils.printMenuOption(1, "Tentar novamente");
+                                ConsoleUtils.printMenuOption(2, "Voltar ao menu principal");
+                                
+                                int choice = getIntInput("Escolha uma opção: ");
+                                if (choice == 2) {
+                                    return;
+                                }
+                                break; // Sai do loop de verificação 2FA e volta para o início
+                            }
+                        } else {
+                            attempts++;
+                            if (attempts < maxAttempts) {
+                                ConsoleUtils.printError("Código 2FA inválido. Tentativas restantes: " + (maxAttempts - attempts));
+                                ConsoleUtils.printInfo("Certifique-se de que o código está atualizado no aplicativo.");
+                                ConsoleUtils.printInfo("Dica: O código muda a cada 30 segundos.");
+        } else {
+                                ConsoleUtils.printError("Número máximo de tentativas excedido.");
+                                ConsoleUtils.printInfo("\nDeseja:");
+                                ConsoleUtils.printMenuOption(1, "Tentar novamente");
+                                ConsoleUtils.printMenuOption(2, "Voltar ao menu principal");
+                                
+                                int choice = getIntInput("Escolha uma opção: ");
+                                if (choice == 2) {
+                                    return;
+                                }
+                                break; // Sai do loop de verificação 2FA e volta para o início
+                            }
+                        }
+                    } catch (NumberFormatException e) {
+                        ConsoleUtils.printError("Código inválido. Digite apenas números.");
+                        attempts++;
+                    }
+                }
+            } catch (Exception e) {
+                ConsoleUtils.printError("Erro durante a configuração do primeiro usuário: " + e.getMessage());
+                ConsoleUtils.printInfo("\nDeseja:");
+                ConsoleUtils.printMenuOption(1, "Tentar novamente");
+                ConsoleUtils.printMenuOption(2, "Voltar ao menu principal");
+                
+                int choice = getIntInput("Escolha uma opção: ");
+                if (choice == 2) {
                     return;
                 }
+                // Se escolher 1, continua no loop e tenta novamente
             }
         }
     }
@@ -294,16 +344,39 @@ public class PasswordVaultController {
      */
     private void authenticate2FA() {
         ConsoleUtils.printHeader("Autenticação 2FA");
-        String code = getValidatedInput("Digite o código do Google Authenticator: ", ValidationUtils::validate2FACode);
+        
+        int maxAttempts = 3;
+        int attempts = 0;
+        boolean verified = false;
 
-        if (twoFactorAuth.verifyCode(Integer.parseInt(code))) {
+        while (!verified && attempts < maxAttempts) {
+            String code = getValidatedInput("Digite o código do Google Authenticator: ", ValidationUtils::validate2FACode);
+            
+            // Limpar o código (remover espaços e caracteres não numéricos)
+            code = code.replaceAll("[^0-9]", "");
+            
+            try {
+                if (twoFactorAuth.verifyCode(Integer.parseInt(code))) {
             isAuthenticated = true;
-            ConsoleUtils.printSuccess("Autenticação 2FA bem-sucedida!");
+                    verified = true;
+                    ConsoleUtils.printSuccess("Autenticação 2FA bem-sucedida!");
+                } else {
+                    attempts++;
+                    if (attempts < maxAttempts) {
+                        ConsoleUtils.printError("Código 2FA inválido. Tentativas restantes: " + (maxAttempts - attempts));
+                        ConsoleUtils.printInfo("Certifique-se de que o código está atualizado no aplicativo.");
+                        ConsoleUtils.printInfo("Dica: O código muda a cada 30 segundos.");
         } else {
-            ConsoleUtils.printError("Código 2FA inválido.");
-            this.tempMasterPassword = null;
-             ConsoleUtils.printError("Autenticação 2FA falhou.");
-             isAuthenticated = false;
+                        ConsoleUtils.printError("Número máximo de tentativas excedido.");
+                        this.tempMasterPassword = null;
+                        ConsoleUtils.printError("Autenticação 2FA falhou.");
+                        isAuthenticated = false;
+                    }
+                }
+            } catch (NumberFormatException e) {
+                ConsoleUtils.printError("Código inválido. Digite apenas números.");
+                attempts++;
+            }
         }
     }
 
@@ -441,7 +514,7 @@ public class PasswordVaultController {
         try {
              // Usar o repositório determinado (local ou remoto)
              List<Credential> credentials = currentCredentialRepository.findAllByUserId(loggedInUser.getUserId(), currentDbType);
-             if (credentials.isEmpty()) {
+        if (credentials.isEmpty()) {
                  ConsoleUtils.printInfo("Nenhuma credencial cadastrada para este usuário.");
             return;
         }

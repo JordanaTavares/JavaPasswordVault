@@ -18,7 +18,7 @@ target/
 Thumbs.db
 
 # Arquivos de configuração local
-credentials.json
+credentials.json 
 masteruser.json
 
 # Ignorar arquivo de propriedades que contém informações sensíveis do banco de dados

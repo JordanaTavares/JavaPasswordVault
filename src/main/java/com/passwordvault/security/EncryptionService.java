@@ -116,7 +116,7 @@ public class EncryptionService {
         String allChars = upperCase + lowerCase + digits + specialChars;
         SecureRandom random = new SecureRandom();
         StringBuilder password = new StringBuilder(length);
-
+        
         // Garantir que a senha contenha pelo menos um caractere de cada tipo
         password.append(upperCase.charAt(random.nextInt(upperCase.length())));
         password.append(lowerCase.charAt(random.nextInt(lowerCase.length())));
