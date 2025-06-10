@@ -13,7 +13,6 @@ Um gerenciador de senhas seguro e fácil de usar, desenvolvido em Java. Proteja 
 - [Instalação](#instalação)
 - [Como Usar](#como-usar)
 - [Segurança](#segurança)
-- [Perguntas Frequentes](#perguntas-frequentes)
 
 ## ✨ Recursos
 
@@ -72,7 +71,7 @@ Um gerenciador de senhas seguro e fácil de usar, desenvolvido em Java. Proteja 
 
 1. Clone o repositório:
    ```bash
-   git clone https://github.com/seu-usuario/JavaPasswordVault.git
+   git clone https://github.com/JordanaTavares/JavaPasswordVault.git
    cd JavaPasswordVault
    ```
 
@@ -548,20 +547,6 @@ jstack $(pgrep -f password-vault)
 - Faça backup regular dos seus dados
 - Mantenha o sistema operacional atualizado
 - Use senhas únicas para cada serviço
-
-## ❓ Perguntas Frequentes
-
-**P: O que acontece se eu esquecer minha senha mestra?**
-R: Infelizmente, por questões de segurança, não é possível recuperar a senha mestra. Mantenha-a em um local seguro.
-
-**P: Como funciona o 2FA?**
-R: O sistema usa o Google Authenticator para gerar códigos temporários. Você precisa escanear o QR Code inicial com o app.
-
-**P: Minhas senhas estão seguras?**
-R: Sim! Usamos criptografia AES-GCM de nível militar e suas senhas nunca são armazenadas em texto puro.
-
-**P: Posso usar em múltiplos dispositivos?**
-R: Atualmente, o sistema é local. Recomendamos usar em apenas um dispositivo seguro.
 
 ## 🤝 Suporte
 
